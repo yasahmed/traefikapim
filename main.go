@@ -1,17 +1,5 @@
 package traefikapim
 
-
-
-
-
-
-
-
-
-
-
-
-
 import (
 	"bytes"
 	"context"
@@ -250,14 +238,13 @@ func GetApplication(a *Traefikapim, headers http.Header) []Application {
 		} else {
 		}
 
-
 	}
 
 	return appsRes
 }
 
 func getPublicKey(jwksURL string) (*rsa.PublicKey, error) {
-	fmt.Println("Get Public Key")
+	fmt.Println("Get Public Key from ", jwksURL)
 	resp, err := http.Get(jwksURL)
 	if err != nil {
 		return nil, err
@@ -896,6 +883,17 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	//Stage 2 : Whitelist
+
+	if app.AllowedIps != "" {
+
+		if !isRequestWhitelisted(req, app.AllowedIps) {
+			ShowForbiddenNotAllowedIPError(rw)
+			return
+		}
+
+	}
+
 	//Stage 2 : Transformations
 	urlInfo := GetUrlInfo(app, path, method)
 	fmt.Printf("Check Path UrlInfo  for app %s", app.Id)
@@ -923,17 +921,6 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	} else {
 		fmt.Printf("Path UrlInfo not found for %s %s", method, path)
-	}
-
-	//Stage 2 : Whitelist
-
-	if app.AllowedIps != "" {
-
-		if !isRequestWhitelisted(req, app.AllowedIps) {
-			ShowForbiddenNotAllowedIPError(rw)
-			return
-		}
-
 	}
 
 	a.next.ServeHTTP(rw, req)
