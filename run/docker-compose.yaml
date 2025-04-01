@@ -1,0 +1,145 @@
+version: '3.9'
+
+services:
+  traefik:
+    image: yasahmed/traefik-with-plugin:v3.40
+
+    command:
+      - "--api.insecure=true" 
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=TRACE"
+      - "--experimental.localPlugins.traefikapim.moduleName=github.com/yasahmed/traefikapim"
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`localhost`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.entrypoints=web"
+    ports:
+      - "80:80"
+      - "8087:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - traefik-net
+  
+  python-server:
+    build: ./server/. 
+    container_name: python-server
+    ports:
+      - "9099:9099" 
+    labels:
+      - "traefik.http.routers.python-server.middlewares=strip-toto,uppercaseMiddleware"
+      - "traefik.http.routers.python-server.rule=PathPrefix(`/toto`)"
+      - "traefik.http.routers.python-server.entrypoints=web"
+      - "traefik.http.services.python-server.loadbalancer.server.port=9099"
+
+      - "traefik.http.middlewares.strip-toto.stripprefix.prefixes=/toto"
+
+      # Defauklt config
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.global.jwtEnryptionType=sym"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.global.jwtEnryptionSecret=1234567"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.global.jwtEnryptionPrivateKey=1234567"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.global.jwtJks=http://host.docker.internal:8088/realms/test/protocol/openid-connect/certs"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.global.tokenUrl=http://host.docker.internal:8088/realms/test/protocol/openid-connect/token"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.global.secret=M1B3eLDAsZfQ9XIpC4CXLTuwZnulKE7J"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.global.clientId=client"
+      
+      # Application 1: appLower
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[0].id=appLower"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[0].enable=true"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[0].securityType=OAUTH2"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[0].oauth2Url="
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[0].allowedIps=::1,192.168.148.1"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[0].secured=true"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[0].urls[0].url=/api/lower"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[0].urls[0].method=GET"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[0].urls[0].jspathRequest={\"usrXXXX\": \"$$.info.toto\",\"claim\":\"_$$c.jti\",\"User-Agent5\": \"_$$c.boolvar\", \"User-Agent6\": \"_$$c.longvar\"}"
+
+
+      
+      # Application 2: appData
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[1].id=appData"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[1].enable=true"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[1].securityType=STATIC"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[1].secureHeaderName=X-AUTH-API"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[1].secureHeaderValue=MAMO"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[1].allowedIps=::1,192.168.148.1"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[1].secured=true"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[1].urls[0].url=/api/data"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[1].urls[0].method=GET"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[1].urls[0].jspathRequest={\"usr\": \"$.info.toto\", \"mc\": {\"id\": \"_$$q.query1\", \"jjoX\": \"_$$h.header1\"}}"
+
+      
+      # Application 3: appHeaders
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].id=appHeaders"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].enable=true"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].securityType=OAUTH2"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].sendOauth2AuthHeader=true"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].allowedIps=::1,192.168.148.1"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].secured=true"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].urls[0].url=/api/headers"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].urls[0].method=GET"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].urls[0].addHeaders.X-Custom-Header=TOTO 1"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].urls[0].addHeaders.User-Agent=TOTO M6"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].urls[0].addHeaders.User-Agent2=$$.eee"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].urls[0].addHeaders.User-Agent3=_$q.q1"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].urls[0].addHeaders.User-Agent4=_$$c.jti"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].urls[0].addHeaders.User-Agent5=_$$c.boolvar"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].urls[0].addHeaders.User-Agent6=_$$c.longvar"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[2].urls[0].removeHeaders[0]=Ahmed"
+      
+      # Application 4: appHeaders2
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[3].id=appHeaders2"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[3].enable=true"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[3].securityType=OAUTH2"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[3].sendOauth2AuthHeader=false"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[3].allowedIps=::1,192.168.148.1"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[3].secured=true"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[3].urls[0].url=/api/headers"
+      - "traefik.http.middlewares.uppercaseMiddleware.plugin.traefikapim.applications[3].urls[0].method=GET"
+
+  postgres:
+    image: postgres:16.2
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+
+  keycloak:
+    image: keycloak/keycloak:24.0.2
+    command: start-dev
+    environment:
+      KC_HOSTNAME: host.docker.internal
+      #KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: 8088
+      KC_HOSTNAME_STRICT_BACKCHANNEL: false
+      KC_HTTP_ENABLED: true
+      KC_HOSTNAME_STRICT_HTTPS: false
+      KC_HEALTH_ENABLED: true
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_FEATURES: scripts,admin-fine-grained-authz,token-exchange
+      KC_DB_URL: jdbc:postgresql://postgres/${POSTGRES_DB}
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_PROXY: edge
+    ports:
+      - 8088:8080
+    restart: always
+    depends_on:
+      - postgres
+   
+
+volumes:
+  postgres_data:
+    driver: local
+networks:
+  traefik-net:
+    driver: bridge
+  
