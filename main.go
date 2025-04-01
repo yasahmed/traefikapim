@@ -128,25 +128,21 @@ func New(_ context.Context, next http.Handler, config *Config, name string) (htt
 }
 
 func GetFieldFromJWT(tokenString, field string) (interface{}, error) {
-	// Split JWT into parts
 	parts := strings.Split(tokenString, ".")
 	if len(parts) != 3 {
 		return nil, fmt.Errorf("invalid JWT format")
 	}
 
-	// Decode payload (second part)
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode payload: %v", err)
 	}
 
-	// Parse JSON
 	var claims map[string]interface{}
 	if err := json.Unmarshal(payload, &claims); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON: %v", err)
 	}
 
-	// Get field
 	value, exists := claims[field]
 	if !exists {
 		return nil, fmt.Errorf("field '%s' not found", field)
@@ -158,10 +154,10 @@ func GetFieldFromJWT(tokenString, field string) (interface{}, error) {
 func FindApplicationyApiAccessKey(apps []Application, apiAccessKey string) *Application {
 	for _, app := range apps {
 		if app.SecureHeaderValue == apiAccessKey {
-			return &app // Return pointer to first match
+			return &app
 		}
 	}
-	return nil // Return nil if no match found
+	return nil
 }
 
 func FindApplicationyByStaticAuthType(apps []Application) []Application {
@@ -345,7 +341,7 @@ func parseJWT(tokenString string) (header JWTHeader, claims JWTClaims, signature
 
 	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		err = errors.New("Decode Jwt Error")
+		err = errors.New("decode Jwt Error")
 		return
 	}
 	err = json.Unmarshal(headerBytes, &header)
@@ -356,12 +352,12 @@ func parseJWT(tokenString string) (header JWTHeader, claims JWTClaims, signature
 	// Decode claims
 	claimsBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		err = errors.New("Decode Claim Error Part1")
+		err = errors.New("decode Claim Error Part1")
 		return
 	}
 	err = json.Unmarshal(claimsBytes, &claims)
 	if err != nil {
-		err = errors.New("Decode Claim Error Part2")
+		err = errors.New("decode Claim Error Part2")
 		return
 	}
 
@@ -380,32 +376,32 @@ func checkOauth2(u *Traefikapim, rw http.ResponseWriter, authHeader string) erro
 	if u.cfg.Global.JwtJks != "" {
 		publicKey, err = getPublicKey(u.cfg.Global.JwtJks)
 		if err != nil {
-			fmt.Printf("Cannot getb the public key")
-			return errors.New("Cannot getb the public key")
+			fmt.Printf("cannot getb the public key")
+			return errors.New("cannot getb the public key")
 		} else {
 			if authHeader == "" {
-				fmt.Println("Not Authorized: Authorization header is missing")
-				return errors.New("Not Authorized: Authorization header is missing")
+				fmt.Println("not Authorized: Authorization header is missing")
+				return errors.New("not Authorized: Authorization header is missing")
 			} else if !strings.HasPrefix(authHeader, "Bearer ") {
-				fmt.Println("Not Authorized: Invalid Authorization header format")
-				return errors.New("Not Authorized: Invalid Authorization header format")
+				fmt.Println("not Authorized: Invalid Authorization header format")
+				return errors.New("not Authorized: Invalid Authorization header format")
 			} else {
 				token := strings.TrimPrefix(authHeader, "Bearer ")
 				valid, err := validateJWT(token, publicKey)
 				if err != nil {
 					fmt.Println("Not Authorized: Error validating JWT")
-					return errors.New("Not Authorized: Error validating JWT")
+					return errors.New("not Authorized: Error validating JWT")
 				} else if valid {
 					return nil
 				} else {
 					fmt.Println("Not Authorized: Not Authorized")
-					return errors.New("Not Authorized: Not Authorized")
+					return errors.New("not Authorized: Not Authorized")
 				}
 			}
 		}
 	}
 	fmt.Printf("Cannot getb the public key, jwks url is not found !")
-	return errors.New("Not Authorized: Not Authorized")
+	return errors.New("not Authorized: Not Authorized")
 }
 
 func ShowNoAppError(rw http.ResponseWriter) {
@@ -794,7 +790,6 @@ func isRequestWhitelisted(r *http.Request, whitelist string) bool {
 	fmt.Printf("___PROXY Direct IP Client %s", clientIP)
 
 	if isIPWhitelisted(clientIP, whitelist) {
-		fmt.Println("IS whitelisted Origin")
 		return true
 	}
 
