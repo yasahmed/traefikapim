@@ -1,5 +1,17 @@
 package traefikapim
 
+
+
+
+
+
+
+
+
+
+
+
+
 import (
 	"bytes"
 	"context"
@@ -201,7 +213,6 @@ func GetUrlInfo(app *Application, path string, method string) *UrlInfo {
 
 func GetApplication(a *Traefikapim, headers http.Header) []Application {
 
-	var authType string = ""
 	appsRes := make([]Application, 0)
 
 	apps := a.cfg.Applications
@@ -213,48 +224,35 @@ func GetApplication(a *Traefikapim, headers http.Header) []Application {
 			tokenType, err := GetFieldFromJWT(token, TokenType)
 			if err != nil {
 				fmt.Printf("Error while getting token type from token %s, %v", token, err)
-				authType = None
 			} else {
 				if tokenType == Jwt {
-					authType = Jwt
 					applicationId, errAppId := GetFieldFromJWT(token, AppId)
 					if errAppId != nil {
 						fmt.Printf("No found app in config for this Jwt Token %s, %v", token, errAppId)
-						authType = None
 					} else {
 						fmt.Printf("Get App JWT using AppId %s", applicationId.(string))
 						appsRes = append(appsRes, *FindApplicationyAppId(apps, applicationId.(string)))
 					}
 
 				} else if tokenType == Oauth2 {
-					authType = Oauth2
 					applicationId, errAppId := GetFieldFromJWT(token, AppId)
 					if errAppId != nil {
 						fmt.Printf("No found app in config for this Oauth2 Token %s, %v", token, errAppId)
-						authType = None
 					} else {
 						fmt.Printf("Get App Oauth2 using AppId %s", applicationId.(string))
 						appsRes = append(appsRes, *FindApplicationyAppId(apps, applicationId.(string)))
 					}
-				} else {
-					authType = None
 				}
 			}
 
 		} else if headers.Get(StaticApiKeyName) != "" {
-			authType = Static
 			appsRes = FindApplicationyByStaticAuthType(apps)
 		} else {
-			authType = None
 		}
 
-		//fmt.Println("Token Type is ", authType)
 
-	} else {
-		authType = None
 	}
 
-	fmt.Println("Auth type is ", authType)
 	return appsRes
 }
 
