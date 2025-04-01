@@ -201,7 +201,7 @@ func GetUrlInfo(app *Application, path string, method string) *UrlInfo {
 
 func GetApplication(a *Traefikapim, headers http.Header) []Application {
 
-	var authType string
+	authType := new(string) 
 	appsRes := make([]Application, 0)
 
 	apps := a.cfg.Applications
