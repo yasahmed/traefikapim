@@ -248,7 +248,7 @@ func GetApplication(a *Traefikapim, headers http.Header) []Application {
 			authType = None
 		}
 
-		fmt.Println("Token Type is ", authType)
+		//fmt.Println("Token Type is ", authType)
 
 	} else {
 		authType = None
