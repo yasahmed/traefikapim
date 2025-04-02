@@ -496,8 +496,9 @@ func evaluate(jsonData interface{}, steps []interface{}) (interface{}, error) {
 	return current, nil
 }
 
-func getBodyRequestJsonPathResult(path string, data interface{}) (string, error) {
+func getBodyRequestJsonPathResult(path string, data interface{}) (interface{}, error) {
 
+	fmt.Printf("pathpathpathpath %s", path)
 	if path == "" || data == nil {
 		return "", nil
 	}
@@ -506,20 +507,20 @@ func getBodyRequestJsonPathResult(path string, data interface{}) (string, error)
 
 	if err != nil {
 		fmt.Println("Error parsing path:", err)
-		return "", err
+		return nil, err
 	}
 
 	result, err := evaluate(data, steps)
 
 	if err != nil {
 		fmt.Println("Error evaluating path:", err)
-		return "", err
+		return nil, err
 	}
-	return result.(string), nil
+	return result, nil
 }
 
 func processJSON(data interface{}, dataJSON string, headers http.Header, queries url.Values) interface{} {
-	var result string
+	var result interface{}
 
 	var template2 map[string]interface{}
 	if err := json.Unmarshal([]byte(dataJSON), &template2); err != nil {
