@@ -645,6 +645,8 @@ func changeRequestHeaders(config UrlInfo, req *http.Request, ddata []byte, heade
 					toto, _ := getBodyRequestJsonPathResult(value, template2)
 					setHeaderAsString(req, key, toto)
 
+				} else {
+					setHeaderAsString(req, key, "")
 				}
 
 			}
@@ -674,6 +676,8 @@ func changeRequestHeaders(config UrlInfo, req *http.Request, ddata []byte, heade
 				} else {
 					setHeaderAsString(req, key, "")
 				}
+			} else {
+				setHeaderAsString(req, key, value)
 			}
 		}
 	}
