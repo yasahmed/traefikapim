@@ -744,7 +744,7 @@ func getToken(u *Traefikapim) string {
 		fmt.Printf("Error while getting access token : %v\n", err)
 		return ""
 	}
-	return token.AccessToken
+	return "Bearer " + token.AccessToken
 }
 
 func isIPWhitelisted(ipStr, whitelist string) bool {
