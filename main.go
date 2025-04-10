@@ -20,7 +20,6 @@ import (
 	"time"
 )
 
-// Config the plugin configuration.
 
 const StaticApiKeyName = "X-AUTH-API"
 const AuthorizationHeader = "Authorization"
@@ -83,6 +82,7 @@ type UrlInfo struct {
 	AddHeaders    map[string]string `json:"addHeaders"`
 	RemoveHeaders []string          `json:"removeHeaders"`
 	JspathRequest string            `json:"jspathRequest"`
+	JsPathUri     string            `json:"jsPathUri"`
 }
 
 type Urls []UrlInfo
@@ -586,6 +586,93 @@ func processJSON(data interface{}, dataJSON string, headers http.Header, queries
 	}
 }
 
+func getValFromQuery(v string, ddata []byte, headers http.Header, queries url.Values) interface{} {
+
+	if len(ddata) > 0 {
+
+		dataJSON := string(ddata)
+		var template2 map[string]interface{}
+		if err := json.Unmarshal([]byte(dataJSON), &template2); err != nil {
+			panic(err)
+		}
+
+		if strings.HasPrefix(v, "$.") {
+			result, _ := getBodyRequestJsonPathResult(v, template2)
+			return result
+		}
+	}
+
+	if strings.HasPrefix(v, "_$q.") {
+		headerName := strings.Replace(v, "_$q.", "", 1)
+		result := queries.Get(headerName)
+		return result
+
+	}
+
+	if strings.HasPrefix(v, "_$h.") {
+		headerName := strings.Replace(v, "_$h.", "", 1)
+		result := headers.Get(headerName)
+		return result
+
+	}
+
+	if strings.HasPrefix(v, "_$c.") {
+		AuthHeader := strings.TrimPrefix(headers.Get(AuthorizationHeader), BearerPrefix)
+		headerName := strings.Replace(v, "_$c.", "", 1)
+
+		if AuthHeader != "" {
+
+			claimField, er := GetFieldFromJWT(AuthHeader, headerName)
+			if er == nil {
+				return claimField
+
+			} else {
+				return nil
+			}
+
+		} else {
+			return nil
+		}
+	}
+	return nil
+}
+
+func reconstructURI(path string, paramList []string) string {
+	if len(paramList) == 0 {
+		return path
+	}
+
+	queryString := strings.Join(paramList, "&")
+
+	return fmt.Sprintf("%s?%s", path, queryString)
+}
+
+func updateNativeRequestUrl(uriString string, ddata []byte, headers http.Header, queries url.Values) string {
+
+	u, err := url.Parse(uriString)
+	if err != nil {
+		fmt.Println("Error parsing URI:", err)
+		return uriString
+	}
+
+	queryParams := u.Query()
+
+	if len(queryParams) > 0 {
+		var paramList []string
+		for key, values := range queryParams {
+			for _, value := range values {
+				paramList = append(paramList, fmt.Sprintf("%s=%v", key, getValFromQuery(value, ddata, headers, queries)))
+			}
+		}
+
+		return reconstructURI(u.Path, paramList)
+
+	} else {
+		return uriString
+	}
+
+}
+
 func updateNativeRequest(config UrlInfo, ddata []byte, headers http.Header, queries url.Values) []byte {
 
 	if len(ddata) > 0 {
@@ -909,6 +996,16 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 		if app.SendOauth2AuthHeader {
 			req.Header.Set("Authorization", getToken(a))
+		}
+
+		if urlInfo.JsPathUri != "" {
+			newPath := updateNativeRequestUrl(urlInfo.JsPathUri, bodyBytes, headers, queries)
+
+			modifiedURL := *req.URL
+			modifiedURL.RawQuery = ""
+			modifiedURL.Path = newPath
+			newReq, _ := http.NewRequestWithContext(req.Context(), req.Method, modifiedURL.String(), req.Body)
+			req = newReq
 		}
 
 		if urlInfo.JspathRequest != "" {
