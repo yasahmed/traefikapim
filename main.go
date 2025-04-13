@@ -692,36 +692,8 @@ func updateNativeRequestUrl2(uriString string, ddata []byte, headers http.Header
 	if len(pathWithoutQueries) > 1 {
 		result = updateNativeRequestUrl(result, ddata, headers, queries)
 	}
-
 	fmt.Printf("URITRANS %s", result)
-
 	return result
-
-}
-
-func updateNativeRequest(config UrlInfo, ddata []byte, headers http.Header, queries url.Values) []byte {
-
-	if len(ddata) > 0 {
-
-		dataJSON := string(ddata)
-
-		var template map[string]interface{}
-		if err := json.Unmarshal([]byte(config.JspathRequest), &template); err != nil {
-			panic(err)
-		}
-
-		processedJSON := processJSON(template, dataJSON, headers, queries)
-
-		output, err := json.MarshalIndent(processedJSON, "", "  ")
-		if err != nil {
-			panic(err)
-		}
-
-		return output
-
-	} else {
-		return ddata
-	}
 
 }
 
@@ -1034,23 +1006,10 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			req = newReq
 		}
 
-		if urlInfo.JspathRequest != "" {
-			erest := updateNativeRequest(*urlInfo, bodyBytes, headers, queries)
-
-			if len(erest) > 0 {
-				req.Body = io.NopCloser(bytes.NewReader(erest))
-
-				contentLength := len(erest)
-				req.ContentLength = int64(contentLength)
-				req.Header.Set("Content-Length", strconv.Itoa(contentLength))
-			}
-
-		}
-
 	} else {
 		fmt.Printf("Path UrlInfo not found for %s %s", method, path)
 	}
-
+	fmt.Printf("Final Request URT Past %v,%s", req.URL,path)
 	a.next.ServeHTTP(rw, req)
 
 }
