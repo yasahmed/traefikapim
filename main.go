@@ -20,8 +20,8 @@ import (
 	"time"
 )
 
+// Config the plugin configuration.
 
-const StaticApiKeyName = "X-AUTH-API"
 const AuthorizationHeader = "Authorization"
 const TokenType = "tokenType"
 const BearerPrefix = "Bearer "
@@ -74,6 +74,7 @@ type GlobalItems struct {
 	TokenUrl               string `json:"tokenUrl"`
 	Secret                 string `json:"secret"`
 	ClientId               string `json:"clientId"`
+	SecureHeaderName       string `json:"secureHeaderName"`
 }
 
 type UrlInfo struct {
@@ -83,6 +84,7 @@ type UrlInfo struct {
 	RemoveHeaders []string          `json:"removeHeaders"`
 	JspathRequest string            `json:"jspathRequest"`
 	JsPathUri     string            `json:"jsPathUri"`
+	JsPathVarable string            `json:"jsPathVarable"`
 }
 
 type Urls []UrlInfo
@@ -91,7 +93,6 @@ type Application struct {
 	Id                   string `json:"id"`
 	Enable               bool   `json:"enable"`
 	ClientId             string `json:"clientId"`
-	Oauth2Url            string `json:"oauth2Url"`
 	AllowedIps           string `json:"allowedIps"`
 	Secured              bool   `json:"secured"`
 	Urls                 Urls   `json:"url"`
@@ -120,6 +121,7 @@ type Traefikapim struct {
 }
 
 func New(_ context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
+
 	return &Traefikapim{
 		next: next,
 		name: name,
@@ -160,10 +162,10 @@ func FindApplicationyApiAccessKey(apps []Application, apiAccessKey string) *Appl
 	return nil
 }
 
-func FindApplicationyByStaticAuthType(apps []Application) []Application {
+func FindApplicationyByStaticAuthType(a *Traefikapim, apps []Application, secureHeadervalue string) []Application {
 	appsRes := make([]Application, 0)
 	for _, app := range apps {
-		if app.SecureHeaderName == StaticApiKeyName {
+		if app.SecureHeaderName == a.cfg.Global.SecureHeaderName && app.SecureHeaderValue == secureHeadervalue {
 			appsRes = append(appsRes, app) // Return pointer to first match
 		}
 	}
@@ -181,7 +183,8 @@ func FindApplicationyAppId(apps []Application, appId string) *Application {
 
 func isUrlBelongToAnApp(app *Application, path string, method string) bool {
 	for _, url := range app.Urls {
-		if url.Url == path && url.Method == method {
+		fmt.Printf("LOLAAAAA %v,%v => %v", url.Url, path, strings.Contains(url.Url, path))
+		if strings.Contains(path, url.Url) && url.Method == method {
 			return true
 		}
 	}
@@ -192,7 +195,7 @@ func GetUrlInfo(app *Application, path string, method string) *UrlInfo {
 	fmt.Printf("app length in GetUrlInfo %d for %v", len(app.Urls), app)
 	for _, url := range app.Urls {
 		fmt.Printf("CCCCCCC")
-		if url.Url == path && url.Method == method {
+		if strings.Contains(path, url.Url) && url.Method == method {
 			return &url
 		}
 	}
@@ -233,8 +236,8 @@ func GetApplication(a *Traefikapim, headers http.Header) []Application {
 				}
 			}
 
-		} else if headers.Get(StaticApiKeyName) != "" {
-			appsRes = FindApplicationyByStaticAuthType(apps)
+		} else if headers.Get(a.cfg.Global.SecureHeaderName) != "" {
+			appsRes = FindApplicationyByStaticAuthType(a, apps, headers.Get(a.cfg.Global.SecureHeaderName))
 		} else {
 		}
 
@@ -588,6 +591,8 @@ func processJSON(data interface{}, dataJSON string, headers http.Header, queries
 
 func getValFromQuery(v string, ddata []byte, headers http.Header, queries url.Values) interface{} {
 
+	fmt.Print("vvvvvvvvvvvXXXXXvvvvvvv,%s", v)
+
 	if len(ddata) > 0 {
 
 		dataJSON := string(ddata)
@@ -670,6 +675,25 @@ func updateNativeRequestUrl(uriString string, ddata []byte, headers http.Header,
 	} else {
 		return uriString
 	}
+
+}
+
+func updateNativeRequestUrl2(uriString string, ddata []byte, headers http.Header, queries url.Values) string {
+	var result = uriString
+	var pathWithoutQueries = strings.Split(result, "?")
+
+	for _, part := range strings.Split(pathWithoutQueries[0], "/") {
+		fmt.Printf("resultresultresultresult %s", result)
+		if strings.Contains(part, "$.") || strings.Contains(part, "_$c.") || strings.Contains(part, "_$h.") || strings.Contains(part, "_$q.") {
+			result = strings.ReplaceAll(result, part, fmt.Sprintf("%v", getValFromQuery(part, ddata, headers, queries)))
+		}
+	}
+
+	if len(pathWithoutQueries) > 1 {
+		return updateNativeRequestUrl(result, ddata, headers, queries)
+	}
+
+	return result
 
 }
 
@@ -931,7 +955,7 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 					} else if app.SecurityType == Static {
 
-						if app.SecureHeaderValue != req.Header.Get(StaticApiKeyName) {
+						if app.SecureHeaderValue != req.Header.Get(a.cfg.Global.SecureHeaderName) {
 							ShowNoAuthError(rw)
 							return
 						} else {
@@ -955,7 +979,7 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 
 	} else if len(apps) > 1 { // static token
-		app = FindApplicationyApiAccessKey(apps, req.Header.Get(StaticApiKeyName))
+		app = FindApplicationyApiAccessKey(apps, req.Header.Get(a.cfg.Global.SecureHeaderName))
 		fmt.Printf("Selected App 2 : %s\n", app.Id)
 
 		if app.Secured {
@@ -998,12 +1022,12 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			req.Header.Set("Authorization", getToken(a))
 		}
 
-		if urlInfo.JsPathUri != "" {
-			newPath := updateNativeRequestUrl(urlInfo.JsPathUri, bodyBytes, headers, queries)
-
+		if urlInfo.JsPathVarable != "" {
+			newPath := updateNativeRequestUrl2(urlInfo.JsPathVarable, bodyBytes, headers, queries)
 			modifiedURL := *req.URL
 			modifiedURL.RawQuery = ""
 			modifiedURL.Path = newPath
+
 			newReq, _ := http.NewRequestWithContext(req.Context(), req.Method, modifiedURL.String(), req.Body)
 			req = newReq
 		}
