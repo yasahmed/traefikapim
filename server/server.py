@@ -13,6 +13,22 @@ def get_data():
 
     return request_data
 
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def get_full_url(path):
+    # Split the path and take the last segment
+    path_segments = path.split('/')
+    last_segment = path
+    
+    # Append query string if it exists
+    query_string = request.query_string.decode()  # e.g., "id=1"
+    if query_string:
+        last_segment = path + f"?{query_string}"
+
+    
+    return last_segment
+
 @app.route('/api/headers', methods=['GET'])
 def get_headers():
     # Get all request headers
