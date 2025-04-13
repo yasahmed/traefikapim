@@ -28,10 +28,11 @@ http:
               jwtEnryptionType: "sym" # "asym"
               jwtEnryptionSecret: "1234567"
               jwtEnryptionPrivateKey: "1234567"
-              jwtJks: "http://host.docker.internal:8088/realms/test/protocol/openid-connect/certs"
-              tokenUrl: "http://host.docker.internal:8088/realms/test/protocol/openid-connect/token"
+              jwtJks: "http://localhost:8081/realms/test/protocol/openid-connect/certs"
+              tokenUrl: "http://localhost:8081/realms/test/protocol/openid-connect/token"
               secret: "M1B3eLDAsZfQ9XIpC4CXLTuwZnulKE7J"
               clientId: "client"
+              secureHeaderName: "X-AUTH-API"
             
           applications:
             - id: "appLower"
@@ -53,28 +54,48 @@ http:
             
             - id: "appData"
               enable: true
-              securityType: "STATIC" #jwt, static, none
-              secureHeaderName: "X-AUTH-API"
+              securityType: "STATICP" #jwt, static, none
+              secureHeaderName: "X-AUTH-APIX"
               secureHeaderValue: "MAMO"
-              allowedIps: "10.23.32.1,10.23.32.2"
+              
+              #allowedIps: "10.23.32.1,10.23.32.2"
               secured: true
               urls:
               - url: "/api/data"
                 method: GET
                 jspathRequest: |
                   {
-                    "usr": "$.info.toto",
-                    "mc": {
-                      "id": "_$q.query1",
-                      "jjoX": "_$h.header1"
-                    }
+                    "accountNumber": "$.accountNumber",
+                    "originExternalApplication": "MB",
+                    "externalReference": "$.externalReference",
+                    "comment": "$.comment",
+                    "motive": "$.comment",
+                    "cashBankNumber": "00",
+                    "companyCode": "00230",
+                    "amount": "$.amount",
+                    "simpleBeneficiaryList": "$.simpleBeneficiaryList",
+                    "actionList": [
+                      {
+                          "channel": "",
+                          "userId": "",
+                          "userName": "",
+                          "operationalPositionId": "",
+                          "operationalPositionLabel": "",
+                          "type": null,
+                          "actionDate": null,
+                          "comment": "toto",
+                          "ticketNumber": null
+                      }
+                      ]
                   }
 
             - id: "appHeaders"
               enable: true
-              securityType: "OAUTH2" #jwt, static, none
+              securityType: "STATIC" #jwt, static, none
+              
+              secureHeaderValue: "MAMO"
               sendOauth2AuthHeader: true
-              allowedIps: "::1"
+              #allowedIps: "::1"
               secured: true
               urls:
               - url: "/api/headers"
@@ -82,13 +103,27 @@ http:
                 addHeaders:
                   X-Custom-Header: "TOTO 1"
                   User-Agent: "TOTO M6"
-                  User-Agent2: "$.eee"
+                  User-Agent2: "XXX"
                   User-Agent3: "_$q.q1"
                   User-Agent4: "_$c.jti"
                   User-Agent5: "_$c.boolvar"
                   User-Agent6: _$c.longvar
                 removeHeaders:
                   - "Ahmed"
+            
+            - id: "appPath"
+              enable: true
+              securityType: "STATIC" #jwt, static, none
+              secureHeaderName: "X-AUTH-API"
+              secureHeaderValue: "TOTOX"
+              sendOauth2AuthHeader: true
+              #allowedIps: "::1"
+              secured: true
+              urls:
+              - url: "/api/hola"
+                method: GET
+                JsPathVarable: "/api/hola/$.size/$.page?jj=_$h.ahmed"
+               
 
             - id: "appHeaders2"
               enable: true
