@@ -690,8 +690,10 @@ func updateNativeRequestUrl2(uriString string, ddata []byte, headers http.Header
 	}
 
 	if len(pathWithoutQueries) > 1 {
-		return updateNativeRequestUrl(result, ddata, headers, queries)
+		result = updateNativeRequestUrl(result, ddata, headers, queries)
 	}
+
+	fmt.Printf("URITRANS %s", result)
 
 	return result
 
