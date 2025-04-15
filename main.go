@@ -697,6 +697,32 @@ func updateNativeRequestUrl2(uriString string, ddata []byte, headers http.Header
 
 }
 
+func updateNativeRequest(config UrlInfo, ddata []byte, headers http.Header, queries url.Values) []byte {
+
+	if len(ddata) > 0 {
+
+		dataJSON := string(ddata)
+
+		var template map[string]interface{}
+		if err := json.Unmarshal([]byte(config.JspathRequest), &template); err != nil {
+			panic(err)
+		}
+
+		processedJSON := processJSON(template, dataJSON, headers, queries)
+
+		output, err := json.MarshalIndent(processedJSON, "", "  ")
+		if err != nil {
+			panic(err)
+		}
+
+		return output
+
+	} else {
+		return ddata
+	}
+
+}
+
 func setHeaderAsString(req *http.Request, key string, claimField interface{}) {
 
 	switch v := claimField.(type) {
@@ -895,6 +921,7 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	queries = req.URL.Query()
 
 	bodyBytes, err := io.ReadAll(req.Body)
+	fmt.Printf("DDDDDDDDDD %v", bodyBytes)
 	if err != nil {
 		http.Error(rw, "Failed to read body", http.StatusBadRequest)
 		return
@@ -902,6 +929,7 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
 	req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	toto := io.NopCloser(bytes.NewReader(bodyBytes))
 	req.ContentLength = int64(len(bodyBytes))
 
 	//Stage 1 : Auth
@@ -1001,15 +1029,51 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			modifiedURL := *req.URL
 			modifiedURL.RawQuery = ""
 			modifiedURL.Path = newPath
+			path = newPath
 
-			newReq, _ := http.NewRequestWithContext(req.Context(), req.Method, modifiedURL.String(), req.Body)
+			newReq, _ := http.NewRequestWithContext(req.Context(), req.Method, modifiedURL.String(), toto)
+			newReq.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+			newReq.Header = req.Header.Clone()
 			req = newReq
+
+			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+			contentLength := len(bodyBytes)
+			req.ContentLength = int64(contentLength)
+			req.Header.Set("Content-Length", strconv.Itoa(contentLength))
+		}
+
+		if urlInfo.JspathRequest != "" {
+			erest := updateNativeRequest(*urlInfo, bodyBytes, headers, queries)
+
+			if len(erest) > 0 {
+				req.Body = io.NopCloser(bytes.NewReader(erest))
+
+				contentLength := len(erest)
+				req.ContentLength = int64(contentLength)
+				req.Header.Set("Content-Length", strconv.Itoa(contentLength))
+			}
+
 		}
 
 	} else {
 		fmt.Printf("Path UrlInfo not found for %s %s", method, path)
 	}
-	fmt.Printf("Final Request URT Past %v,%s", req.URL,path)
+	fmt.Printf("Final Request URT Past %v,%v", req.URL, path)
+
+	newURL := *req.URL  // Copy the original URL
+	newBody := req.Body // Copy the original URL
+
+	newURL.Path = path
+
+	newURL.RawPath = path
+
+	req.URL = &newURL
+	req.Body = newBody
+
+	req.RequestURI = req.URL.RequestURI()
+
+	fmt.Printf("Final Request URT Past %v,%s", req.URL, path)
 	a.next.ServeHTTP(rw, req)
 
 }
