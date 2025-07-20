@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -25,12 +26,17 @@ import (
 const AuthorizationHeader = "Authorization"
 const TokenType = "tokenType"
 const BearerPrefix = "Bearer "
+const BasicPrefix = "Basic "
 const AppId = "appId"
 
-const Jwt = "JWT"
+const JwtTokenRequestor = "GetJWTToken"
+const Oauth2TokenRequestor = "GetOauth2Token"
 const Oauth2 = "OAUTH2"
 const None = "NONE"
 const Static = "STATIC"
+const Basic = "BASIC"
+
+const XGatewayApiKey = "x-Gateway-APIKey"
 
 type OAuth2Client struct {
 	ServerURL string
@@ -70,7 +76,6 @@ type GlobalItems struct {
 	JwtEnryptionType       string `json:"jwtEnryptionType"`
 	JwtEnryptionSecret     string `json:"jwtEnryptionSecret"`
 	JwtEnryptionPrivateKey string `json:"jwtEnryptionPrivateKey"`
-	JwtJks                 string `json:"jwtJks"`
 	TokenUrl               string `json:"tokenUrl"`
 	Secret                 string `json:"secret"`
 	ClientId               string `json:"clientId"`
@@ -90,17 +95,24 @@ type UrlInfo struct {
 type Urls []UrlInfo
 
 type Application struct {
-	Id                   string `json:"id"`
-	Enable               bool   `json:"enable"`
-	ClientId             string `json:"clientId"`
-	AllowedIps           string `json:"allowedIps"`
-	Secured              bool   `json:"secured"`
-	Urls                 Urls   `json:"url"`
-	Method               string `json:"method"`
-	SecureHeaderName     string `json:"secureHeaderName"`
-	SecureHeaderValue    string `json:"secureHeaderValue"`
-	SecurityType         string `json:"securityType"`
+	Id                string `json:"id"`
+	Enable            bool   `json:"enable"`
+	ClientId          string `json:"clientId"`
+	AllowedIps        string `json:"allowedIps"`
+	Secured           bool   `json:"secured"`
+	Urls              Urls   `json:"url"`
+	Method            string `json:"method"`
+	SecureHeaderName  string `json:"secureHeaderName"`
+	SecureHeaderValue string `json:"secureHeaderValue"`
+	SecurityType      string `json:"securityType"`
+
+	BaseBasicToken       string `json:"baseBasicToken"`
 	SendOauth2AuthHeader bool   `json:"sendOauth2AuthHeader"`
+
+	UrlToken           string `json:"urlToken"`
+	ExposedGetTokenUrl string `json:"exposedGetTokenUrl"`
+
+	JwtJks string `json:"jwtJks"`
 }
 
 type Applications []Application
@@ -166,19 +178,19 @@ func FindApplicationyByStaticAuthType(a *Traefikapim, apps []Application, secure
 	appsRes := make([]Application, 0)
 	for _, app := range apps {
 		if app.SecureHeaderName == a.cfg.Global.SecureHeaderName && app.SecureHeaderValue == secureHeadervalue {
-			appsRes = append(appsRes, app) // Return pointer to first match
+			appsRes = append(appsRes, app)
 		}
 	}
-	return appsRes // Return nil if no match found
+	return appsRes
 }
 
 func FindApplicationyAppId(apps []Application, appId string) *Application {
 	for _, app := range apps {
 		if app.Id == appId {
-			return &app // Return pointer to first match
+			return &app
 		}
 	}
-	return nil // Return nil if no match found
+	return nil
 }
 
 func isUrlBelongToAnApp(app *Application, path string, method string) bool {
@@ -189,6 +201,15 @@ func isUrlBelongToAnApp(app *Application, path string, method string) bool {
 		}
 	}
 	return false
+}
+
+func getTokenApp(apps []Application, appId string) *Application {
+	for _, app := range apps {
+		if app.Secured == false && app.Id == appId {
+			return &app
+		}
+	}
+	return nil
 }
 
 func GetUrlInfo(app *Application, path string, method string) *UrlInfo {
@@ -202,21 +223,110 @@ func GetUrlInfo(app *Application, path string, method string) *UrlInfo {
 	return nil
 }
 
-func GetApplication(a *Traefikapim, headers http.Header) []Application {
+func FindApplicationyByBasicAuthType(a *Traefikapim, apps []Application, token string) []Application {
+	appsRes := make([]Application, 0)
+	fmt.Printf("Basic Auth %s, length app : %v", token, len(apps))
+
+	for _, app := range apps {
+		fmt.Printf("app.SecurityType : %s,   app.BaseBasicToken : %s == %s", Basic, app.BaseBasicToken, token)
+
+		if app.SecurityType == Basic && app.BaseBasicToken == token {
+			fmt.Printf("BASIC APP EXIST")
+
+			appsRes = append(appsRes, app)
+		}
+	}
+	return appsRes
+}
+
+func ParseBasicAuth(token string) (string, string, error) {
+
+	fmt.Printf("Try to decrypt %s", token)
+
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(token))
+
+	if err != nil {
+		return "", "", err
+	}
+
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return "", "", errors.New("invalid basic auth format")
+	}
+
+	return parts[0], parts[1], nil
+}
+
+func MaskPassword(password string) string {
+	if len(password) <= 3 {
+		return password
+	}
+	return password[:3] + strings.Repeat("*", len(password)-3)
+}
+func CompareJSONInterfaces(a, b interface{}) bool {
+	jsonStrA, okA := a.(string)
+	jsonStrB, okB := b.(string)
+	if !okA || !okB {
+		fmt.Errorf("both inputs must be JSON strings, got types %T and %T", a, b)
+		return false
+	}
+	var dataA, dataB interface{}
+	if err := json.Unmarshal([]byte(jsonStrA), &dataA); err != nil {
+		fmt.Errorf("invalid JSON in first argument: %v", err)
+		return false
+	}
+	if err := json.Unmarshal([]byte(jsonStrB), &dataB); err != nil {
+		fmt.Errorf("invalid JSON in second argument: %v", err)
+		return false
+	}
+	return reflect.DeepEqual(dataA, dataB)
+}
+func ByteToJSON(data []byte) (string, error) {
+	var v interface{}
+	if err := json.Unmarshal(data, &v); err != nil {
+		return "", fmt.Errorf("invalid JSON: %v", err)
+	}
+	compact, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode JSON: %v", err)
+	}
+	return strings.TrimSpace(string(compact)), nil
+}
+
+func Base64ToJSONString(base64Str string) (string, error) {
+	bytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(base64Str))
+	if err != nil {
+		return "", fmt.Errorf("invalid Base64: %v", err)
+	}
+
+	var v interface{}
+	if err := json.Unmarshal(bytes, &v); err != nil {
+		return "", fmt.Errorf("invalid JSON: %v", err)
+	}
+	compact, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode JSON: %v", err)
+	}
+	return string(compact), nil
+}
+
+func GetApplication(a *Traefikapim, headers http.Header, ddata []byte) []Application {
 
 	appsRes := make([]Application, 0)
 
 	apps := a.cfg.Applications
 
+	fmt.Printf("Apps length : %v", len(apps))
+
 	if len(apps) != 0 {
-		if headers.Get(AuthorizationHeader) != "" {
+		if headers.Get(AuthorizationHeader) != "" && strings.HasPrefix(strings.ToLower(headers.Get(AuthorizationHeader)), strings.ToLower(BearerPrefix)) {
 			token := strings.TrimPrefix(headers.Get(AuthorizationHeader), BearerPrefix)
 
 			tokenType, err := GetFieldFromJWT(token, TokenType)
 			if err != nil {
 				fmt.Printf("Error while getting token type from token %s, %v", token, err)
 			} else {
-				if tokenType == Jwt {
+				if tokenType == JwtTokenRequestor {
 					applicationId, errAppId := GetFieldFromJWT(token, AppId)
 					if errAppId != nil {
 						fmt.Printf("No found app in config for this Jwt Token %s, %v", token, errAppId)
@@ -236,16 +346,28 @@ func GetApplication(a *Traefikapim, headers http.Header) []Application {
 				}
 			}
 
+		} else if strings.HasPrefix(strings.ToLower(headers.Get(AuthorizationHeader)), strings.ToLower(BasicPrefix)) {
+			token := strings.TrimPrefix(headers.Get(AuthorizationHeader), BasicPrefix)
+			user, pass, errBasic := ParseBasicAuth(token)
+			fmt.Printf("Auth Type: Basic Auth %s %s, %s", token, user, MaskPassword(pass))
+
+			if errBasic == nil {
+				appsRes = FindApplicationyByBasicAuthType(a, apps, token)
+			} else {
+				fmt.Printf("No found app in config for this Basic Token %s, %v", token, errBasic)
+			}
+
 		} else if headers.Get(a.cfg.Global.SecureHeaderName) != "" {
 			appsRes = FindApplicationyByStaticAuthType(a, apps, headers.Get(a.cfg.Global.SecureHeaderName))
 		} else {
+
+			fmt.Printf("NoAuth was specified")
 		}
 
 	}
 
 	return appsRes
 }
-
 func getPublicKey(jwksURL string) (*rsa.PublicKey, error) {
 	fmt.Println("Get Public Key from ", jwksURL)
 	resp, err := http.Get(jwksURL)
@@ -358,11 +480,11 @@ func parseJWT(tokenString string) (header JWTHeader, claims JWTClaims, signature
 	return
 }
 
-func checkOauth2(u *Traefikapim, rw http.ResponseWriter, authHeader string) error {
+func checkOauth2(u *Application, rw http.ResponseWriter, authHeader string) error {
 	var publicKey *rsa.PublicKey
 	var err error
-	if u.cfg.Global.JwtJks != "" {
-		publicKey, err = getPublicKey(u.cfg.Global.JwtJks)
+	if u.JwtJks != "" {
+		publicKey, err = getPublicKey(u.JwtJks)
 		if err != nil {
 			fmt.Printf("cannot getb the public key")
 			return errors.New("cannot getb the public key")
@@ -377,7 +499,7 @@ func checkOauth2(u *Traefikapim, rw http.ResponseWriter, authHeader string) erro
 				token := strings.TrimPrefix(authHeader, "Bearer ")
 				valid, err := validateJWT(token, publicKey)
 				if err != nil {
-					fmt.Println("Not Authorized: Error validating JWT")
+					fmt.Println("Not Authorized: Error validating JWT : ", err)
 					return errors.New("not Authorized: Error validating JWT")
 				} else if valid {
 					return nil
@@ -426,6 +548,15 @@ func ShowNoNotRecognizedAuthTypeError(rw http.ResponseWriter) {
 		"error":   "Unauthorized",
 		"message": "Not recognized auth type",
 	})
+}
+
+func ReturnJwtToken(rw http.ResponseWriter, token string) {
+	rw.Header().Set("Content-Type", "application/json")
+	rw.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(rw).Encode(map[string]interface{}{
+		"access_token": token,
+	})
+	return
 }
 
 func parseJsonPath(path string) ([]interface{}, error) {
@@ -857,7 +988,22 @@ func getToken(u *Traefikapim) string {
 
 	token, err := client.GetAccessToken()
 	if err != nil {
-		fmt.Printf("Error while getting access token : %v\n", err)
+		fmt.Printf("Error while getting access token using Global Configuration: %v\n", err)
+		return ""
+	}
+	return "Bearer " + token.AccessToken
+}
+
+func (c *Application) GetTokenByApp(clientId string, secret string) string {
+	client := NewOAuth2Client(
+		c.UrlToken,
+		clientId,
+		secret,
+	)
+
+	token, err := client.GetAccessToken()
+	if err != nil {
+		fmt.Printf("Error while getting access token using Application configuration using %s %s: %v\n", err, clientId, secret)
 		return ""
 	}
 	return "Bearer " + token.AccessToken
@@ -910,7 +1056,8 @@ func isRequestWhitelisted(r *http.Request, whitelist string) bool {
 
 func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
-	apps := GetApplication(a, req.Header)
+	bodyBytes, err := io.ReadAll(req.Body)
+	apps := GetApplication(a, req.Header, bodyBytes)
 	var app *Application
 	path := req.URL.Path
 	method := req.Method
@@ -920,8 +1067,6 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	headers = req.Header
 	queries = req.URL.Query()
 
-	bodyBytes, err := io.ReadAll(req.Body)
-	fmt.Printf("DDDDDDDDDD %v", bodyBytes)
 	if err != nil {
 		http.Error(rw, "Failed to read body", http.StatusBadRequest)
 		return
@@ -947,21 +1092,28 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 				if app.Secured {
 					if app.SecurityType == Oauth2 {
-						err := checkOauth2(a, rw, req.Header.Get(AuthorizationHeader))
+						err := checkOauth2(app, rw, req.Header.Get(AuthorizationHeader))
 						if err != nil {
 							fmt.Printf("Auth Error : %v", err)
 							ShowNoAuthError(rw)
 							return
 						}
-					} else if app.SecurityType == Jwt {
-
 					} else if app.SecurityType == Static {
 
 						if app.SecureHeaderValue != req.Header.Get(a.cfg.Global.SecureHeaderName) {
 							ShowNoAuthError(rw)
 							return
 						} else {
-							fmt.Printf("Connected as statc")
+							fmt.Printf("Connected as Static")
+						}
+
+					} else if app.SecurityType == Basic {
+						token := strings.TrimPrefix(headers.Get(AuthorizationHeader), BasicPrefix)
+						if app.BaseBasicToken != token {
+							ShowNoAuthError(rw)
+							return
+						} else {
+							fmt.Printf("Connected as Basic Bearer")
 						}
 
 					} else {
@@ -997,8 +1149,84 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			}
 		}
 	} else {
-		ShowNoAppError(rw)
-		return
+		app = getTokenApp(a.cfg.Applications, "Oauth2EpToken")
+
+		if app == nil {
+			ShowNoAppError(rw)
+			return
+
+		} else {
+
+			var currentApp *Application
+			if headers.Get(XGatewayApiKey) != "" {
+				currentApp = getTokenApp(a.cfg.Applications, "JwtEpToken")
+				var bodyInJson map[string]interface{}
+				if err := json.Unmarshal(bodyBytes, &bodyInJson); err != nil {
+					panic(err)
+				}
+
+				clientID, ok := bodyInJson["claimsSet"].(map[string]interface{})["client"].(string)
+				if !ok {
+					fmt.Println("Error: 'client' is not a string or not found")
+					ShowNoAuthError(rw)
+					return
+				}
+
+				token := currentApp.GetTokenByApp(clientID, headers.Get(XGatewayApiKey))
+
+				if token == "" {
+					ShowNoAuthError(rw)
+					return
+				}
+
+				ReturnJwtToken(rw, strings.Replace(token, "Bearer ", "", 1))
+				return
+			} else {
+				currentApp = getTokenApp(a.cfg.Applications, "Oauth2EpToken")
+				fmt.Printf("No Auth App : Oauth2EpToken")
+
+				// Parse the form data
+				if err := req.ParseForm(); err != nil {
+					fmt.Printf("Failed to parse form when getting oauth2 token")
+					return
+				}
+
+				// Retrieve specific fields
+				clientID := req.Form.Get("client_id")
+				clientSecret := req.Form.Get("client_secret")
+
+				client := NewOAuth2Client(
+					app.UrlToken,
+					clientID,
+					clientSecret,
+				)
+
+				token, err := client.GetAccessToken()
+
+				if err != nil {
+					ShowNoAppError(rw)
+					fmt.Printf("Failed to get oauth2 token")
+					return
+				}
+
+				if token == nil || token.AccessToken == "" {
+					ShowNoAuthError(rw)
+					return
+				}
+
+				ReturnJwtToken(rw, token.AccessToken)
+
+				return
+
+			}
+
+			if currentApp == nil {
+				ShowNoAppError(rw)
+				fmt.Printf("No app found in the last")
+				return
+			}
+
+		}
 	}
 
 	//Stage 2 : Whitelist
