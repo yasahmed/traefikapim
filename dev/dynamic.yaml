@@ -33,8 +33,67 @@ http:
               secret: "M1B3eLDAsZfQ9XIpC4CXLTuwZnulKE7J"
               clientId: "client"
               secureHeaderName: "X-AUTH-API"
+          
             
           applications:
+
+            - id: "JwtEpToken"
+              enable: true
+              securityType: "NONE"
+              urlToken: "http://localhost:8081/realms/test/protocol/openid-connect/token"
+              allowedIps: "::1"
+              secured: false
+              urls:
+              - url: "/api/jwt/token"
+                method: POST
+            
+            - id: "Oauth2EpToken"
+              enable: true
+              securityType: "NONE"
+              urlToken: "http://localhost:8081/realms/test/protocol/openid-connect/token"
+              allowedIps: "::1"
+              secured: false
+              urls:
+              - url: "/api/oauth2/token"
+                method: POST
+
+
+          #- id: "appJwt"
+          #  enable: true
+          #  securityType: "JWT"
+          #  jwtBody: "eyAiY2xhaW1zU2V0IjogeyAiY2xpZW50IjogImxhbmFjYXNoIiB9IH0="
+          #  jwtHeader: "345678976543"
+          #  allowedIps: "::1"
+          #  secured: true
+          #  urls:
+          #  - url: "/api/lower"
+          #    method: GET
+          #    jspathRequest: |
+          #      {
+          #        "usrXXXX": "$.info.toto",
+          #          "claim":"_$c.jti",
+          #          "User-Agent5": "_$c.boolvar",
+          #          "User-Agent6": "_$c.longvar"
+          #      }
+#
+            - id: "appBasic"
+              enable: true
+              securityType: "BASIC" #jwt, static, none
+              baseBasicToken: "dG90bzp0b3Rv"
+              oauth2Url: ""
+              allowedIps: "::1"
+              secured: true
+              urls:
+              - url: "/api/lower"
+                method: GET
+                jspathRequest: |
+                  {
+                    "usrXXXX": "$.info.toto",
+                      "claim":"_$c.jti",
+                      "User-Agent5": "_$c.boolvar",
+                      "User-Agent6": "_$c.longvar"
+                  }
+                    
             - id: "appLower"
               enable: true
               securityType: "OAUTH2" #jwt, static, none
@@ -89,7 +148,7 @@ http:
                       ]
                   }
 
-            - id: "appHeaders"
+            - id: "appHeaders2"
               enable: true
               securityType: "STATIC" #jwt, static, none
               
@@ -122,12 +181,18 @@ http:
               urls:
               - url: "/api/hola"
                 method: GET
-                JsPathVarable: "/api/hola/$.size/$.page?jj=_$h.ahmed"
+                JsPathVarable: "/api/hola/_$q.page/_$q.size"
+                jspathRequest: |
+                  {
+                    "accountNumber": "$.ok"
+                    
+                  }
                
 
-            - id: "appHeaders2"
+            - id: "appHeaders"
               enable: true
               securityType: "OAUTH2" #jwt, static, none
+              jwtJks: "http://localhost:8081/realms/test/protocol/openid-connect/certs"
               sendOauth2AuthHeader: false
               allowedIps: "::1"
               secured: true
