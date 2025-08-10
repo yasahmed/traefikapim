@@ -215,7 +215,7 @@ func getTokenApp(apps []Application, appId string) *Application {
 func GetUrlInfo(app *Application, path string, method string) *UrlInfo {
 	fmt.Printf("app length in GetUrlInfo %d for %v", len(app.Urls), app)
 	for _, url := range app.Urls {
-		fmt.Printf("CCCCCCC")
+		fmt.Printf("CCCCCCC %d", url)
 		if strings.Contains(path, url.Url) && url.Method == method {
 			return &url
 		}
@@ -936,6 +936,7 @@ func changeRequestHeaders(config UrlInfo, req *http.Request, ddata []byte, heade
 }
 
 func NewOAuth2Client(serverURL, clientID, secret string) *OAuth2Client {
+	fmt.Println("url: %s, client: %s, secret: %s", serverURL, clientID, secret)
 	return &OAuth2Client{
 		ServerURL: serverURL,
 		ClientID:  clientID,
@@ -1149,89 +1150,79 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			}
 		}
 	} else {
-		app = getTokenApp(a.cfg.Applications, "Oauth2EpToken")
+		appOauth2Token := getTokenApp(a.cfg.Applications, "Oauth2EpToken")
+		appJwtToken := getTokenApp(a.cfg.Applications, "JwtEpToken")
 
-		if app == nil {
-			ShowNoAppError(rw)
+		if appJwtToken != nil && headers.Get(XGatewayApiKey) != "" && GetUrlInfo(appJwtToken, path, method) != nil {
+			app = appJwtToken
+			fmt.Println("is JWT api url")
+			var bodyInJson map[string]interface{}
+			if err := json.Unmarshal(bodyBytes, &bodyInJson); err != nil {
+				panic(err)
+			}
+
+			clientID, ok := bodyInJson["claimsSet"].(map[string]interface{})["client"].(string)
+			if !ok {
+				fmt.Println("Error: 'client' is not a string or not found")
+				ShowNoAuthError(rw)
+				return
+			}
+
+			token := appJwtToken.GetTokenByApp(clientID, headers.Get(XGatewayApiKey))
+
+			if token == "" {
+				ShowNoAuthError(rw)
+				return
+			}
+
+			ReturnJwtToken(rw, strings.Replace(token, "Bearer ", "", 1))
 			return
+			//&& GetUrlInfo(appOauth2Token, path, method) != nil
+		} else if appOauth2Token != nil && GetUrlInfo(appOauth2Token, path, method) != nil {
+			app = appOauth2Token
+			fmt.Printf("is Oauth2 api url, path: %s, method: %s", path, method)
 
-		} else {
-
-			var currentApp *Application
-			if headers.Get(XGatewayApiKey) != "" {
-				currentApp = getTokenApp(a.cfg.Applications, "JwtEpToken")
-				var bodyInJson map[string]interface{}
-				if err := json.Unmarshal(bodyBytes, &bodyInJson); err != nil {
-					panic(err)
-				}
-
-				clientID, ok := bodyInJson["claimsSet"].(map[string]interface{})["client"].(string)
-				if !ok {
-					fmt.Println("Error: 'client' is not a string or not found")
-					ShowNoAuthError(rw)
-					return
-				}
-
-				token := currentApp.GetTokenByApp(clientID, headers.Get(XGatewayApiKey))
-
-				if token == "" {
-					ShowNoAuthError(rw)
-					return
-				}
-
-				ReturnJwtToken(rw, strings.Replace(token, "Bearer ", "", 1))
+			// Parse the form data
+			if err := req.ParseForm(); err != nil {
+				fmt.Printf("Failed to parse form when getting oauth2 token")
 				return
-			} else {
-				currentApp = getTokenApp(a.cfg.Applications, "Oauth2EpToken")
-				fmt.Printf("No Auth App : Oauth2EpToken")
-
-				// Parse the form data
-				if err := req.ParseForm(); err != nil {
-					fmt.Printf("Failed to parse form when getting oauth2 token")
-					return
-				}
-
-				// Retrieve specific fields
-				clientID := req.Form.Get("client_id")
-				clientSecret := req.Form.Get("client_secret")
-
-				client := NewOAuth2Client(
-					app.UrlToken,
-					clientID,
-					clientSecret,
-				)
-
-				token, err := client.GetAccessToken()
-
-				if err != nil {
-					ShowNoAppError(rw)
-					fmt.Printf("Failed to get oauth2 token")
-					return
-				}
-
-				if token == nil || token.AccessToken == "" {
-					ShowNoAuthError(rw)
-					return
-				}
-
-				ReturnJwtToken(rw, token.AccessToken)
-
-				return
-
 			}
 
-			if currentApp == nil {
+			// Retrieve specific fields
+			clientID := req.Form.Get("client_id")
+			clientSecret := req.Form.Get("client_secret")
+
+			client := NewOAuth2Client(
+				appOauth2Token.UrlToken,
+				clientID,
+				clientSecret,
+			)
+
+			token, err := client.GetAccessToken()
+
+			if err != nil {
 				ShowNoAppError(rw)
-				fmt.Printf("No app found in the last")
+				fmt.Printf("Failed to get oauth2 token")
 				return
 			}
 
+			if token == nil || token.AccessToken == "" {
+				ShowNoAuthError(rw)
+				return
+			}
+
+			ReturnJwtToken(rw, token.AccessToken)
+
+			return
+		} else {
+			fmt.Printf("WALOOOOOOO")
 		}
+
 	}
 
 	//Stage 2 : Whitelist
 
-	if app.AllowedIps != "" {
+	if app != nil && app.AllowedIps != "" {
 
 		if !isRequestWhitelisted(req, app.AllowedIps) {
 			ShowForbiddenNotAllowedIPError(rw)
@@ -1240,53 +1231,58 @@ func (a *Traefikapim) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	}
 
-	//Stage 2 : Transformations
-	urlInfo := GetUrlInfo(app, path, method)
-	fmt.Printf("Check Path UrlInfo  for app %s", app.Id)
+	if app != nil {
+		//Stage 2 : Transformations
+		urlInfo := GetUrlInfo(app, path, method)
+		fmt.Printf("Check Path UrlInfo  for app %s", app.Id)
 
-	if urlInfo != nil {
-		fmt.Printf("Path UrlInfo is found for %s %s, for app %s", method, path, app.Id)
-		changeRequestHeaders(*urlInfo, req, bodyBytes, headers)
+		if urlInfo != nil {
+			fmt.Printf("Path UrlInfo is found for %s %s, for app %s", method, path, app.Id)
+			changeRequestHeaders(*urlInfo, req, bodyBytes, headers)
 
-		if app.SendOauth2AuthHeader {
-			req.Header.Set("Authorization", getToken(a))
-		}
+			if app.SendOauth2AuthHeader {
+				req.Header.Set("Authorization", getToken(a))
+			}
 
-		if urlInfo.JsPathVarable != "" {
-			newPath := updateNativeRequestUrl2(urlInfo.JsPathVarable, bodyBytes, headers, queries)
-			modifiedURL := *req.URL
-			modifiedURL.RawQuery = ""
-			modifiedURL.Path = newPath
-			path = newPath
+			if urlInfo.JsPathVarable != "" {
+				newPath := updateNativeRequestUrl2(urlInfo.JsPathVarable, bodyBytes, headers, queries)
+				modifiedURL := *req.URL
+				modifiedURL.RawQuery = ""
+				modifiedURL.Path = newPath
+				path = newPath
 
-			newReq, _ := http.NewRequestWithContext(req.Context(), req.Method, modifiedURL.String(), toto)
-			newReq.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-			newReq.Header = req.Header.Clone()
-			req = newReq
+				newReq, _ := http.NewRequestWithContext(req.Context(), req.Method, modifiedURL.String(), toto)
+				newReq.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+				newReq.Header = req.Header.Clone()
+				req = newReq
 
-			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+				req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
-			contentLength := len(bodyBytes)
-			req.ContentLength = int64(contentLength)
-			req.Header.Set("Content-Length", strconv.Itoa(contentLength))
-		}
-
-		if urlInfo.JspathRequest != "" {
-			erest := updateNativeRequest(*urlInfo, bodyBytes, headers, queries)
-
-			if len(erest) > 0 {
-				req.Body = io.NopCloser(bytes.NewReader(erest))
-
-				contentLength := len(erest)
+				contentLength := len(bodyBytes)
 				req.ContentLength = int64(contentLength)
 				req.Header.Set("Content-Length", strconv.Itoa(contentLength))
 			}
 
-		}
+			if urlInfo.JspathRequest != "" {
+				erest := updateNativeRequest(*urlInfo, bodyBytes, headers, queries)
 
+				if len(erest) > 0 {
+					req.Body = io.NopCloser(bytes.NewReader(erest))
+
+					contentLength := len(erest)
+					req.ContentLength = int64(contentLength)
+					req.Header.Set("Content-Length", strconv.Itoa(contentLength))
+				}
+
+			}
+
+		} else {
+			fmt.Printf("Path UrlInfo not found for %s %s", method, path)
+		}
 	} else {
-		fmt.Printf("Path UrlInfo not found for %s %s", method, path)
+		fmt.Printf("No app found")
 	}
+
 	fmt.Printf("Final Request URT Past %v,%v", req.URL, path)
 
 	newURL := *req.URL  // Copy the original URL
